@@ -1,85 +1,137 @@
-import React, { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import React, { useEffect, useState, useCallback } from "react";
+import { Link, useLocation } from "react-router-dom";
 import { listJobs } from "../api";
 
-const cardStyle = {
-  border: "1px solid #e0e0e0",
-  borderRadius: 10,
-  padding: "20px",
-  marginBottom: 16,
-  background: "white",
-  boxShadow: "0 2px 6px rgba(0,0,0,0.06)",
-  transition: "box-shadow 0.2s",
-};
-
-const tagStyle = {
-  display: "inline-block",
-  background: "#e3f2fd",
-  color: "#1565c0",
-  borderRadius: 20,
-  padding: "2px 10px",
-  fontSize: "0.8rem",
-  marginRight: 6,
-  marginTop: 4,
-};
+const JOB_TYPES = ["", "full-time", "part-time", "remote", "contract", "internship"];
+const EXP_LEVELS = ["", "junior", "mid", "senior"];
 
 export default function JobList() {
-  const [jobs, setJobs] = useState([]);
+  const location = useLocation();
+  const params = new URLSearchParams(location.search);
+  const [jobs, setJobs]     = useState([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState("");
+  const [search, setSearch]   = useState(params.get("q") || "");
+  const [jobType, setJobType] = useState("");
+  const [expLevel, setExpLevel] = useState("");
 
   useEffect(() => {
-    listJobs()
-      .then((res) => setJobs(res.data))
+    listJobs(0, 100)
+      .then(r => setJobs(r.data))
       .catch(console.error)
       .finally(() => setLoading(false));
   }, []);
 
-  const filtered = jobs.filter(
-    (j) =>
-      j.title.toLowerCase().includes(search.toLowerCase()) ||
-      j.company.toLowerCase().includes(search.toLowerCase()) ||
-      (j.required_skills || []).some((s) =>
-        s.toLowerCase().includes(search.toLowerCase())
-      )
-  );
+  const filtered = jobs.filter(j => {
+    const q = search.toLowerCase();
+    const matchesSearch = !q ||
+      j.title.toLowerCase().includes(q) ||
+      j.company.toLowerCase().includes(q) ||
+      (j.required_skills || []).some(s => s.toLowerCase().includes(q));
+    const matchesType  = !jobType  || j.job_type === jobType;
+    const matchesLevel = !expLevel || j.experience_level === expLevel;
+    return matchesSearch && matchesType && matchesLevel;
+  });
 
-  if (loading) return <p>Loading jobs...</p>;
+  const clearFilters = () => { setSearch(""); setJobType(""); setExpLevel(""); };
 
   return (
-    <div>
-      <h1 style={{ marginBottom: 20 }}>Browse Jobs</h1>
-      <input
-        type="text"
-        placeholder="Search by title, company, or skill..."
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        style={{ width: "100%", padding: "10px 14px", borderRadius: 8, border: "1px solid #ccc", marginBottom: 20, fontSize: "1rem" }}
-      />
-      {filtered.length === 0 && <p>No jobs found.</p>}
-      {filtered.map((job) => (
-        <div key={job.id} style={cardStyle}>
-          <h2 style={{ margin: 0 }}>
-            <Link to={"/jobs/" + job.id} style={{ color: "#1a73e8", textDecoration: "none" }}>
-              {job.title}
-            </Link>
-          </h2>
-          <p style={{ margin: "6px 0", color: "#555" }}>
-            {job.company} {job.location ? "· " + job.location : ""}
-            {job.job_type ? " · " + job.job_type : ""}
-          </p>
-          <div>
-            {(job.required_skills || []).map((s) => (
-              <span key={s} style={tagStyle}>{s}</span>
+    <div className="container page">
+      <div className="page-header">
+        <h1>Browse Jobs</h1>
+        <p>{loading ? "Loading..." : `${filtered.length} job${filtered.length !== 1 ? "s" : ""} found`}</p>
+      </div>
+
+      <div className="jobs-layout">
+        {/* ── Filters Panel ── */}
+        <aside className="filters-panel">
+          <h3>Filters</h3>
+
+          <div className="filter-group">
+            <label>Search</label>
+            <input
+              className="form-control"
+              placeholder="Title, company, skill…"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+            />
+          </div>
+
+          <div className="filter-group">
+            <label>Job Type</label>
+            <select className="form-control" value={jobType} onChange={e => setJobType(e.target.value)}>
+              <option value="">All Types</option>
+              {JOB_TYPES.filter(Boolean).map(t => (
+                <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="filter-group">
+            <label>Experience Level</label>
+            <select className="form-control" value={expLevel} onChange={e => setExpLevel(e.target.value)}>
+              <option value="">All Levels</option>
+              {EXP_LEVELS.filter(Boolean).map(l => (
+                <option key={l} value={l}>{l.charAt(0).toUpperCase() + l.slice(1)}</option>
+              ))}
+            </select>
+          </div>
+
+          {(search || jobType || expLevel) && (
+            <button onClick={clearFilters} className="btn btn-outline btn-sm btn-full">
+              ✕ Clear Filters
+            </button>
+          )}
+        </aside>
+
+        {/* ── Job List ── */}
+        <main>
+          {loading && <div className="spinner" />}
+
+          {!loading && filtered.length === 0 && (
+            <div className="empty-state">
+              <div className="icon">🔍</div>
+              <h3>No jobs found</h3>
+              <p>Try adjusting your search or filters</p>
+              <button onClick={clearFilters} className="btn btn-primary" style={{ marginTop: 16 }}>
+                Clear Filters
+              </button>
+            </div>
+          )}
+
+          <div className="job-grid">
+            {filtered.map(job => (
+              <Link key={job.id} to={"/jobs/" + job.id} style={{ textDecoration: "none" }}>
+                <div className="job-card">
+                  <div className="job-card-logo">{job.company?.[0]?.toUpperCase() || "J"}</div>
+                  <div className="job-card-body">
+                    <div className="job-card-title">{job.title}</div>
+                    <div className="job-card-company">{job.company}</div>
+                    <div className="job-card-meta">
+                      {job.location  && <span className="badge badge-gray">📍 {job.location}</span>}
+                      {job.job_type  && <span className="badge badge-blue">{job.job_type}</span>}
+                      {job.experience_level && <span className="badge badge-purple">{job.experience_level}</span>}
+                      {job.salary_min && (
+                        <span className="job-card-salary">
+                          💰 {job.salary_min.toLocaleString()}–{(job.salary_max || 0).toLocaleString()}/yr
+                        </span>
+                      )}
+                    </div>
+                    <div className="job-card-tags">
+                      {(job.required_skills || []).slice(0, 5).map(s => (
+                        <span key={s} className="badge badge-blue">{s}</span>
+                      ))}
+                      {(job.required_skills || []).length > 5 && (
+                        <span className="badge badge-gray">+{job.required_skills.length - 5} more</span>
+                      )}
+                    </div>
+                  </div>
+                  <div style={{ color: "var(--primary)", fontSize: "1.2rem", alignSelf: "center" }}>›</div>
+                </div>
+              </Link>
             ))}
           </div>
-          {job.salary_min && (
-            <p style={{ margin: "8px 0 0", color: "#388e3c", fontSize: "0.9rem" }}>
-              Salary: {job.salary_min.toLocaleString()} – {job.salary_max?.toLocaleString() || "?"} /year
-            </p>
-          )}
-        </div>
-      ))}
+        </main>
+      </div>
     </div>
   );
 }
